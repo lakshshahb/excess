@@ -75,9 +75,7 @@ def extract_relevant_snippets(raw_texts, keyword):
                 
                 snippets.append({
                     "Row Index": idx,
-                    "Context Before": context_before,
-                    "Keyword": keyword,
-                    "Context After": context_after
+                    "Snippet": f"{context_before}<strong>{keyword}</strong>{context_after}"
                 })
     return snippets
 
@@ -105,30 +103,17 @@ if uploaded_files:
                 filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
 
                 if len(filtered_results) > 0:
-                    snippets_data = []
                     for idx, (filename, score) in enumerate(filtered_results):
                         if idx < len(raw_texts):  # Ensure index is valid
                             snippets = extract_relevant_snippets(raw_texts, keyword)
                             for snippet in snippets:
-                                snippets_data.append({
-                                    "File": filename,
-                                    "Relevance Score": score,
-                                    "Row Index": snippet["Row Index"],
-                                    "Context Before": snippet["Context Before"],
-                                    "Keyword": snippet["Keyword"],
-                                    "Context After": snippet["Context After"]
-                                })
+                                # Display each result with context and the keyword highlighted
+                                st.markdown(f"**File:** {filename} | **Relevance Score:** {score:.4f}")
+                                st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0;'>"
+                                            f"{snippet['Snippet']}</div>", unsafe_allow_html=True)
 
-                    if len(snippets_data) > 0:
-                        # Display snippets in a tabular format
-                        snippets_df = pd.DataFrame(snippets_data)
-                        st.write("Keyword Mentions and Snippets (with separated keyword and context)")
-                        st.table(snippets_df)
-
-                        # Provide a download option for results
-                        result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
-                        st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
-                    else:
-                        st.write("No matching snippets found.")
+                    # Provide a download option for results
+                    result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
+                    st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
                 else:
                     st.write("No results found.")
