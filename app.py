@@ -97,17 +97,32 @@ st.write("Upload multiple Excel files and enter keywords or phrases to search.")
 
 uploaded_files = st.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
+# Initialize session state variables
+if 'tfidf_matrix' not in st.session_state:
+    st.session_state.tfidf_matrix = None
+    st.session_state.vectorizer = None
+    st.session_state.combined_texts = []
+    st.session_state.raw_texts = []
+    st.session_state.filenames = []
+
 if uploaded_files:
+    # Process new files
+    combined_texts, raw_texts, filenames = process_files(uploaded_files)
+    st.session_state.combined_texts.extend(combined_texts)
+    st.session_state.raw_texts.extend(raw_texts)
+    st.session_state.filenames.extend(filenames)
+
+    if st.session_state.combined_texts:
+        # Create TF-IDF matrix and vectorizer only if there are texts
+        if st.session_state.tfidf_matrix is None:  # Calculate only if not already done
+            st.session_state.tfidf_matrix, st.session_state.vectorizer = create_tfidf_matrix(st.session_state.combined_texts)
+
     keyword = st.text_input("Enter keyword or phrase to search:", placeholder="e.g., 'data analysis'")
 
     if st.button("Search"):
-        with st.spinner('Processing files...'):
-            combined_texts, raw_texts, filenames = process_files(uploaded_files)
-            if not combined_texts:  # Check if there are any processed texts
-                st.error("No valid text found in the uploaded files.")
-            else:
-                tfidf_matrix, vectorizer = create_tfidf_matrix(combined_texts)
-                results = search_keyword(keyword, tfidf_matrix, vectorizer)
+        if st.session_state.tfidf_matrix is not None:
+            with st.spinner('Searching...'):
+                results = search_keyword(keyword, st.session_state.tfidf_matrix, st.session_state.vectorizer)
 
                 # Display results
                 st.write("Search Results:")
@@ -116,11 +131,11 @@ if uploaded_files:
                 # Loop through the results to create filtered results based on scores
                 for idx, score in enumerate(results):
                     if score > 0:  # If the score is greater than zero, add to filtered results
-                        filtered_results.append((filenames[idx], score))
+                        filtered_results.append((st.session_state.filenames[idx], score))
 
                 # Ensure there are valid results before extracting snippets
                 if filtered_results:
-                    snippets_dict = extract_relevant_snippets(raw_texts, keyword)
+                    snippets_dict = extract_relevant_snippets(st.session_state.raw_texts, keyword)
 
                     # Display snippets for each file with results
                     for filename, score in filtered_results:
@@ -136,3 +151,5 @@ if uploaded_files:
                     st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
                 else:
                     st.write("No results found.")
+        else:
+            st.warning("No text data to search. Please upload files.")
