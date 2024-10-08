@@ -73,17 +73,19 @@ def search_keyword(keyword, tfidf_matrix, vectorizer):
 
 def extract_relevant_snippets(raw_texts, keyword):
     """Extract all occurrences of the keyword or phrase from the raw texts."""
-    snippets = []
-    for text in raw_texts:
+    snippets_dict = {}
+    for text, filename in zip(raw_texts, filenames):
         occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
         if occurrences:  # Only proceed if the keyword is found
+            snippets_dict[filename] = snippets_dict.get(filename, [])
             for start in occurrences:
                 start_index = max(start - 30, 0)
                 end_index = min(start + len(keyword) + 30, len(text))
                 snippet = text[start_index:end_index]
                 highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
-                snippets.append(highlighted_snippet)  # Append each occurrence
-    return snippets
+                snippets_dict[filename].append(highlighted_snippet)  # Append each occurrence
+
+    return snippets_dict
 
 # Streamlit app
 st.title("Excel Keyword Search App")
@@ -114,18 +116,16 @@ if uploaded_files:
 
                 # Ensure there are valid results before extracting snippets
                 if filtered_results:
-                    relevant_snippets = extract_relevant_snippets(raw_texts, keyword)
+                    snippets_dict = extract_relevant_snippets(raw_texts, keyword)
 
-                    # Check if the lengths match before zipping
-                    if len(filtered_results) == len(relevant_snippets):
-                        for (filename, score), snippets in zip(filtered_results, relevant_snippets):
-                            # Create a single HTML block for the snippets
+                    # Display snippets for each file with results
+                    for filename, score in filtered_results:
+                        if filename in snippets_dict:
+                            snippets = snippets_dict[filename]
                             snippet_html = "<br>".join(snippets)  # Join snippets with line breaks
                             st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
                                          f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
                                          f"<strong>Snippets:</strong><br>{snippet_html}</div>", unsafe_allow_html=True)
-                    else:
-                        st.warning("The number of filtered results does not match the number of snippets extracted.")
 
                     # Provide a download option for results
                     result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
