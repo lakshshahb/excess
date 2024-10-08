@@ -124,6 +124,7 @@ if uploaded_files:
 
                     # Provide a download option for results
                     result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
-                    st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
+                    if not result_df.empty:
+                        st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
                 else:
                     st.write("No results found.")
