@@ -37,7 +37,9 @@ def process_files(uploaded_files):
     for file in uploaded_files:
         df = read_excel(file)
         if not df.empty:
-            combined_text = ' '.join(df.astype(str).values.flatten())
+            # Filter out empty or NaN values before combining
+            df = df.replace([None, 'nan', 'NaN'], '').dropna(how='all')  # Replace invalid entries
+            combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
             combined_texts.append(preprocess_text(combined_text))
             raw_texts.append(combined_text)  # Keep raw text for display
         else:
