@@ -30,31 +30,30 @@ def preprocess_text(text):
     return text
 
 def process_files(uploaded_files):
-    """Read multiple Excel files and combine their text data from all sheets."""
+    """Read multiple Excel files and combine their text data from all sheets, disregarding empty sheets."""
     combined_texts = []
     raw_texts = []
 
     for file in uploaded_files:
         # Get the sheet names from the Excel file
         all_sheets = pd.ExcelFile(file).sheet_names
+        st.write(f"Processing file: {file.name} with sheets: {all_sheets}")  # Debug message
+        
         for sheet in all_sheets:
             df = read_excel(file, sheet_name=sheet)
-            if not df.empty:
-                # Drop empty rows and columns
-                df.dropna(how='all', inplace=True)  # Drop rows where all elements are NaN
-                df.dropna(axis=1, how='all', inplace=True)  # Drop columns where all elements are NaN
-                
-                if df.empty:
-                    st.warning(f"{sheet} is empty after removing empty rows and columns in file '{file.name}'.")
-                    continue
+            # Drop empty rows and columns
+            df.dropna(how='all', inplace=True)  # Drop rows where all elements are NaN
+            df.dropna(axis=1, how='all', inplace=True)  # Drop columns where all elements are NaN
 
-                # Filter out NaN values and convert to strings
-                df = df.fillna('')  # Replace NaN with empty strings
-                combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
-                combined_texts.append(preprocess_text(combined_text))
-                raw_texts.append(combined_text)  # Keep raw text for display
-            else:
-                st.warning(f"{sheet} is empty in file '{file.name}'.")
+            if df.empty:
+                st.warning(f"{sheet} is empty after removing empty rows and columns in file '{file.name}'.")
+                continue  # Skip empty sheets
+
+            # Filter out NaN values and convert to strings
+            df = df.fillna('')  # Replace NaN with empty strings
+            combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
+            combined_texts.append(preprocess_text(combined_text))
+            raw_texts.append(combined_text)  # Keep raw text for display
 
     return combined_texts, raw_texts
 
@@ -110,9 +109,6 @@ if uploaded_files:
                     # Ensure we have relevant snippets corresponding to filtered results
                     relevant_snippets = extract_relevant_snippets(raw_texts, keyword)
                     
-                    if len(relevant_snippets) < len(filtered_results):
-                        st.warning("Some files did not contain relevant snippets.")
-
                     for (filename, score), snippets in zip(filtered_results, relevant_snippets):
                         st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
                                      f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
