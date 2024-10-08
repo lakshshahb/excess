@@ -1,3 +1,88 @@
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+import streamlit as st
+import re
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+import nltk
+
+# Ensure you have the NLTK stopwords downloaded
+nltk.download('stopwords')
+
+# Initialize stemmer and stop words
+stemmer = PorterStemmer()
+stop_words = set(stopwords.words('english'))
+
+def read_excel(file, sheet_name=None):
+    """Read an Excel file and return its contents as a DataFrame."""
+    try:
+        df = pd.read_excel(file, sheet_name=sheet_name)
+        return df
+    except Exception as e:
+        st.error(f"Error reading {file.name}: {e}")
+        return pd.DataFrame()
+
+def preprocess_text(text):
+    """Preprocess the text data."""
+    text = re.sub(r'\W+', ' ', text)  # Remove non-word characters
+    text = text.lower()  # Convert to lowercase
+    text = ' '.join(stemmer.stem(word) for word in text.split() if word not in stop_words)  # Remove stop words and stem
+    return text
+
+def process_files(uploaded_files):
+    """Read multiple Excel files and combine their text data from all sheets, disregarding empty sheets."""
+    combined_texts = []
+    raw_texts = []
+
+    for file in uploaded_files:
+        # Get the sheet names from the Excel file
+        all_sheets = pd.ExcelFile(file).sheet_names
+        st.write(f"Processing file: {file.name} with sheets: {all_sheets}")  # Debug message
+        
+        for sheet in all_sheets:
+            df = read_excel(file, sheet_name=sheet)
+            # Drop empty rows and columns
+            df.dropna(how='all', inplace=True)  # Drop rows where all elements are NaN
+            df.dropna(axis=1, how='all', inplace=True)  # Drop columns where all elements are NaN
+
+            if df.empty:
+                st.warning(f"{sheet} is empty after removing empty rows and columns in file '{file.name}'.")
+                continue  # Skip empty sheets
+
+            # Filter out NaN values and convert to strings
+            df = df.fillna('')  # Replace NaN with empty strings
+            combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
+            combined_texts.append(preprocess_text(combined_text))
+            raw_texts.append(combined_text)  # Keep raw text for display
+
+    return combined_texts, raw_texts
+
+def create_tfidf_matrix(texts):
+    """Create a TF-IDF matrix from the combined text data with n-grams."""
+    vectorizer = TfidfVectorizer(ngram_range=(1, 2))  # Allow unigrams and bigrams
+    tfidf_matrix = vectorizer.fit_transform(texts)
+    return tfidf_matrix, vectorizer
+
+def search_keyword(keyword, tfidf_matrix, vectorizer):
+    """Search for a keyword or phrase in the TF-IDF matrix and return relevant indices."""
+    query_vec = vectorizer.transform([keyword])
+    results = (tfidf_matrix * query_vec.T).toarray()
+    return results.flatten()
+
+def extract_relevant_snippets(raw_texts, keyword):
+    """Extract all occurrences of the keyword or phrase from the raw texts."""
+    snippets = []
+    for text in raw_texts:
+        occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
+        if occurrences:  # Only proceed if the keyword is found
+            for start in occurrences:
+                start_index = max(start - 30, 0)
+                end_index = min(start + len(keyword) + 30, len(text))
+                snippet = text[start_index:end_index]
+                highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
+                snippets.append(highlighted_snippet)  # Append each occurrence
+    return snippets
+
 # Streamlit app
 st.title("Excel Keyword Search App")
 st.write("Upload multiple Excel files and enter keywords or phrases to search.")
