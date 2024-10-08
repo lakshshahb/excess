@@ -50,8 +50,8 @@ def preprocess_text(text):
     text = ' '.join(stemmer.stem(word) for word in text.split() if word not in stop_words)  # Remove stop words and stem
     return text
 
-def process_files(uploaded_files, selected_sheets):
-    """Read multiple Excel files and combine their text data from selected sheets."""
+def process_files(uploaded_files):
+    """Read multiple Excel files and combine their text data from all sheets."""
     combined_texts = []
     raw_texts = []
     all_images = []
@@ -59,23 +59,20 @@ def process_files(uploaded_files, selected_sheets):
     for file in uploaded_files:
         # Get the sheet names from the Excel file
         all_sheets = pd.ExcelFile(file).sheet_names
-        for sheet in selected_sheets:
-            if sheet in all_sheets:
-                df = read_excel(file, sheet_name=sheet)
-                if not df.empty:
-                    # Filter out NaN values and convert to strings
-                    df = df.fillna('')  # Replace NaN with empty strings
-                    combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
-                    combined_texts.append(preprocess_text(combined_text))
-                    raw_texts.append(combined_text)  # Keep raw text for display
-                    
-                    # Extract images from the current sheet
-                    images = extract_images(file, sheet_name=sheet)
-                    all_images.append(images)
-                else:
-                    st.warning(f"{sheet} is empty in file '{file.name}'.")
+        for sheet in all_sheets:
+            df = read_excel(file, sheet_name=sheet)
+            if not df.empty:
+                # Filter out NaN values and convert to strings
+                df = df.fillna('')  # Replace NaN with empty strings
+                combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
+                combined_texts.append(preprocess_text(combined_text))
+                raw_texts.append(combined_text)  # Keep raw text for display
+                
+                # Extract images from the current sheet
+                images = extract_images(file, sheet_name=sheet)
+                all_images.append(images)
             else:
-                st.warning(f"Sheet '{sheet}' not found in file '{file.name}'.")
+                st.warning(f"{sheet} is empty in file '{file.name}'.")
 
     return combined_texts, raw_texts, all_images
 
@@ -112,15 +109,11 @@ st.write("Upload multiple Excel files and enter keywords or phrases to search.")
 uploaded_files = st.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    # Get sheet names from the first uploaded file to create a dropdown
-    sheet_names = pd.ExcelFile(uploaded_files[0]).sheet_names
-    selected_sheets = st.multiselect("Select sheets to process:", sheet_names, default=sheet_names)
-
     keyword = st.text_input("Enter keyword or phrase to search:", placeholder="e.g., 'data analysis'")
 
     if st.button("Search"):
         with st.spinner('Processing files...'):
-            combined_texts, raw_texts, all_images = process_files(uploaded_files, selected_sheets)
+            combined_texts, raw_texts, all_images = process_files(uploaded_files)
             if not combined_texts:  # Check if there are any processed texts
                 st.error("No valid text found in the uploaded files.")
             else:
