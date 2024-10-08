@@ -7,7 +7,7 @@ from nltk.stem import PorterStemmer
 import nltk
 
 # Ensure you have the NLTK stopwords downloaded
-nltk.download('stopwords')
+nltk.download('stopwords', quiet=True)
 
 # Initialize stemmer and stop words
 stemmer = PorterStemmer()
@@ -33,6 +33,7 @@ def process_files(uploaded_files):
     """Read multiple Excel files and combine their text data from all sheets, disregarding empty sheets."""
     combined_texts = []
     raw_texts = []
+    filenames = []
 
     for file in uploaded_files:
         # Get the sheet names from the Excel file
@@ -54,8 +55,9 @@ def process_files(uploaded_files):
             combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
             combined_texts.append(preprocess_text(combined_text))
             raw_texts.append(combined_text)  # Keep raw text for display
+            filenames.append(file.name)  # Store the filename for reference
 
-    return combined_texts, raw_texts
+    return combined_texts, raw_texts, filenames
 
 def create_tfidf_matrix(texts):
     """Create a TF-IDF matrix from the combined text data with n-grams."""
@@ -94,7 +96,7 @@ if uploaded_files:
 
     if st.button("Search"):
         with st.spinner('Processing files...'):
-            combined_texts, raw_texts = process_files(uploaded_files)
+            combined_texts, raw_texts, filenames = process_files(uploaded_files)
             if not combined_texts:  # Check if there are any processed texts
                 st.error("No valid text found in the uploaded files.")
             else:
@@ -108,7 +110,7 @@ if uploaded_files:
                 # Loop through the results to create filtered results based on scores
                 for idx, score in enumerate(results):
                     if score > 0:  # If the score is greater than zero, add to filtered results
-                        filtered_results.append((uploaded_files[idx].name, score))
+                        filtered_results.append((filenames[idx], score))
 
                 # Ensure there are valid results before extracting snippets
                 if filtered_results:
