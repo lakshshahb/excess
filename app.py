@@ -71,9 +71,10 @@ def search_keyword(keyword, tfidf_matrix, vectorizer):
     results = (tfidf_matrix * query_vec.T).toarray()
     return results.flatten()
 
-def extract_relevant_snippets(raw_texts, keyword):
+def extract_relevant_snippets(raw_texts, filenames, keyword):
     """Extract all occurrences of the keyword or phrase from the raw texts."""
     snippets_dict = {}
+
     for text, filename in zip(raw_texts, filenames):
         occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
         if occurrences:  # Only proceed if the keyword is found
@@ -135,7 +136,7 @@ if uploaded_files:
 
                 # Ensure there are valid results before extracting snippets
                 if filtered_results:
-                    snippets_dict = extract_relevant_snippets(st.session_state.raw_texts, keyword)
+                    snippets_dict = extract_relevant_snippets(st.session_state.raw_texts, st.session_state.filenames, keyword)
 
                     # Display snippets for each file with results
                     for filename, score in filtered_results:
