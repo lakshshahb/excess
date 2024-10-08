@@ -30,16 +30,18 @@ def preprocess_text(text):
     return text
 
 def process_files(uploaded_files):
-    """Read multiple Excel files and combine their text data."""
+    """Read multiple Excel files and process text row by row."""
     combined_texts = []
     raw_texts = []
     
     for file in uploaded_files:
         df = read_excel(file)
         if not df.empty:
-            combined_text = ' '.join(df.astype(str).values.flatten())
-            combined_texts.append(preprocess_text(combined_text))
-            raw_texts.append(combined_text)  # Keep raw text for display
+            # Process each row individually
+            for _, row in df.iterrows():
+                row_text = ' '.join(map(str, row.values))  # Convert row to string
+                combined_texts.append(preprocess_text(row_text))
+                raw_texts.append(row_text)  # Keep raw text for display
         else:
             st.warning(f"{file.name} is empty or could not be read.")
     
@@ -58,17 +60,25 @@ def search_keyword(keyword, tfidf_matrix, vectorizer):
     return results.flatten()
 
 def extract_relevant_snippets(raw_texts, keyword):
-    """Extract snippets containing the keyword or phrase from the raw texts."""
+    """Extract all keyword occurrences, including context, from the raw texts."""
     snippets = []
-    for text in raw_texts:
+    for idx, text in enumerate(raw_texts):
         occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
         if occurrences:  # Only proceed if the keyword is found
             for start in occurrences:
                 start_index = max(start - 30, 0)
                 end_index = min(start + len(keyword) + 30, len(text))
-                snippet = text[start_index:end_index]
-                highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
-                snippets.append(highlighted_snippet)
+
+                # Split into context before, keyword, and context after
+                context_before = text[start_index:start]
+                context_after = text[start + len(keyword):end_index]
+                
+                snippets.append({
+                    "Row Index": idx,
+                    "Context Before": context_before,
+                    "Keyword": keyword,
+                    "Context After": context_after
+                })
     return snippets
 
 # Streamlit app
@@ -94,15 +104,26 @@ if uploaded_files:
                 filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
 
                 if filtered_results:
-                    for (filename, score), snippet in zip(filtered_results, extract_relevant_snippets(raw_texts, keyword)):
-                        st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
-                                     f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
-                                     f"<strong>Snippet:</strong> {snippet}</div>", unsafe_allow_html=True)
-                    
+                    snippets_data = []
+                    for idx, (filename, score) in enumerate(filtered_results):
+                        snippets = extract_relevant_snippets(raw_texts, keyword)
+                        for snippet in snippets:
+                            snippets_data.append({
+                                "File": filename,
+                                "Relevance Score": score,
+                                "Row Index": snippet["Row Index"],
+                                "Context Before": snippet["Context Before"],
+                                "Keyword": snippet["Keyword"],
+                                "Context After": snippet["Context After"]
+                            })
+
+                    # Display snippets in a tabular format
+                    snippets_df = pd.DataFrame(snippets_data)
+                    st.write("Keyword Mentions and Snippets (with separated keyword and context)")
+                    st.table(snippets_df)
+
                     # Provide a download option for results
                     result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
                     st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
                 else:
                     st.write("No results found.")
-
-# Run the app using: streamlit run your_script_name.py
