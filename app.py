@@ -109,6 +109,8 @@ if 'tfidf_matrix' not in st.session_state:
 if uploaded_files:
     # Process new files
     combined_texts, raw_texts, filenames = process_files(uploaded_files)
+
+    # Update session state with newly processed data
     st.session_state.combined_texts.extend(combined_texts)
     st.session_state.raw_texts.extend(raw_texts)
     st.session_state.filenames.extend(filenames)
