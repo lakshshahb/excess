@@ -107,7 +107,13 @@ if uploaded_files:
                 filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
 
                 if filtered_results:
-                    for (filename, score), snippets in zip(filtered_results, extract_relevant_snippets(raw_texts, keyword)):
+                    # Ensure we have relevant snippets corresponding to filtered results
+                    relevant_snippets = extract_relevant_snippets(raw_texts, keyword)
+                    
+                    if len(relevant_snippets) < len(filtered_results):
+                        st.warning("Some files did not contain relevant snippets.")
+
+                    for (filename, score), snippets in zip(filtered_results, relevant_snippets):
                         st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
                                      f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
                                      f"<strong>Snippets:</strong></div>", unsafe_allow_html=True)
