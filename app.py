@@ -103,7 +103,12 @@ if uploaded_files:
 
                 # Display results
                 st.write("Search Results:")
-                filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
+                filtered_results = []
+
+                # Loop through the results to create filtered results based on scores
+                for idx, score in enumerate(results):
+                    if score > 0:  # If the score is greater than zero, add to filtered results
+                        filtered_results.append((uploaded_files[idx].name, score))
 
                 # Ensure there are valid results before extracting snippets
                 if filtered_results:
