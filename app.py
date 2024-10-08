@@ -58,7 +58,7 @@ def search_keyword(keyword, tfidf_matrix, vectorizer):
     return results.flatten()
 
 def extract_relevant_snippets(raw_texts, keyword):
-    """Extract snippets containing the keyword or phrase from the raw texts."""
+    """Extract all occurrences of the keyword or phrase from the raw texts."""
     snippets = []
     for text in raw_texts:
         occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
@@ -68,7 +68,7 @@ def extract_relevant_snippets(raw_texts, keyword):
                 end_index = min(start + len(keyword) + 30, len(text))
                 snippet = text[start_index:end_index]
                 highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
-                snippets.append(highlighted_snippet)
+                snippets.append(highlighted_snippet)  # Append each occurrence
     return snippets
 
 # Streamlit app
@@ -94,10 +94,12 @@ if uploaded_files:
                 filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
 
                 if filtered_results:
-                    for (filename, score), snippet in zip(filtered_results, extract_relevant_snippets(raw_texts, keyword)):
+                    for (filename, score), snippets in zip(filtered_results, [extract_relevant_snippets(raw_texts, keyword)]):
                         st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
                                      f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
-                                     f"<strong>Snippet:</strong> {snippet}</div>", unsafe_allow_html=True)
+                                     f"<strong>Snippets:</strong></div>", unsafe_allow_html=True)
+                        for snippet in snippets:
+                            st.markdown(f"<div style='padding-left: 10px;'>{snippet}</div>", unsafe_allow_html=True)
                     
                     # Provide a download option for results
                     result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
