@@ -75,7 +75,7 @@ def extract_relevant_snippets(raw_texts, keyword):
 
 # Streamlit app
 st.title("Excel Keyword Search App")
-st.write("Upload Excel files and enter keywords or phrases to search.")
+st.write("Upload multiple Excel files and enter keywords or phrases to search.")
 
 uploaded_files = st.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
