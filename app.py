@@ -77,14 +77,18 @@ def extract_relevant_snippets(raw_texts, keyword):
     for text, filename in zip(raw_texts, filenames):
         occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
         if occurrences:  # Only proceed if the keyword is found
-            snippets_dict[filename] = snippets_dict.get(filename, [])
+            snippets_dict[filename] = snippets_dict.get(filename, set())  # Use set to avoid duplicates
             for start in occurrences:
                 start_index = max(start - 30, 0)
                 end_index = min(start + len(keyword) + 30, len(text))
                 snippet = text[start_index:end_index]
                 highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
-                snippets_dict[filename].append(highlighted_snippet)  # Append each occurrence
+                snippets_dict[filename].add(highlighted_snippet)  # Add each occurrence
 
+    # Convert sets back to lists for rendering
+    for filename in snippets_dict:
+        snippets_dict[filename] = list(snippets_dict[filename])
+    
     return snippets_dict
 
 # Streamlit app
