@@ -62,6 +62,14 @@ def process_files(uploaded_files):
         for sheet in all_sheets:
             df = read_excel(file, sheet_name=sheet)
             if not df.empty:
+                # Drop empty rows and columns
+                df.dropna(how='all', inplace=True)  # Drop rows where all elements are NaN
+                df.dropna(axis=1, how='all', inplace=True)  # Drop columns where all elements are NaN
+                
+                if df.empty:
+                    st.warning(f"{sheet} is empty after removing empty rows and columns in file '{file.name}'.")
+                    continue
+
                 # Filter out NaN values and convert to strings
                 df = df.fillna('')  # Replace NaN with empty strings
                 combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
