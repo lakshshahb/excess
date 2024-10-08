@@ -1,4 +1,5 @@
 import pandas as pd
+import sklearn
 from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
 import re
