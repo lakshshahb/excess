@@ -93,6 +93,7 @@ if uploaded_files:
     if st.button("Search"):
         with st.spinner('Processing files...'):
             combined_texts, raw_texts = process_files(uploaded_files)
+            
             if not combined_texts:  # Check if there are any processed texts
                 st.error("No valid text found in the uploaded files.")
             else:
@@ -103,28 +104,31 @@ if uploaded_files:
                 st.write("Search Results:")
                 filtered_results = [(uploaded_files[idx].name, score) for idx, score in enumerate(results) if score > 0]
 
-                if filtered_results:
+                if len(filtered_results) > 0:
                     snippets_data = []
                     for idx, (filename, score) in enumerate(filtered_results):
-                        snippets = extract_relevant_snippets(raw_texts, keyword)
-                        for snippet in snippets:
-                            snippets_data.append({
-                                "File": filename,
-                                "Relevance Score": score,
-                                "Row Index": snippet["Row Index"],
-                                "Context Before": snippet["Context Before"],
-                                "Keyword": snippet["Keyword"],
-                                "Context After": snippet["Context After"]
-                            })
+                        if idx < len(raw_texts):  # Ensure index is valid
+                            snippets = extract_relevant_snippets(raw_texts, keyword)
+                            for snippet in snippets:
+                                snippets_data.append({
+                                    "File": filename,
+                                    "Relevance Score": score,
+                                    "Row Index": snippet["Row Index"],
+                                    "Context Before": snippet["Context Before"],
+                                    "Keyword": snippet["Keyword"],
+                                    "Context After": snippet["Context After"]
+                                })
 
-                    # Display snippets in a tabular format
-                    snippets_df = pd.DataFrame(snippets_data)
-                    st.write("Keyword Mentions and Snippets (with separated keyword and context)")
-                    st.table(snippets_df)
+                    if len(snippets_data) > 0:
+                        # Display snippets in a tabular format
+                        snippets_df = pd.DataFrame(snippets_data)
+                        st.write("Keyword Mentions and Snippets (with separated keyword and context)")
+                        st.table(snippets_df)
 
-                    # Provide a download option for results
-                    result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
-                    if not result_df.empty:
+                        # Provide a download option for results
+                        result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
                         st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
+                    else:
+                        st.write("No matching snippets found.")
                 else:
                     st.write("No results found.")
