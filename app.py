@@ -1,130 +1,100 @@
 import pandas as pd
 import streamlit as st
-import sqlite3
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 import re
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Table
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from sqlalchemy.sql import text
+import nltk
 
-# Set up the SQLAlchemy ORM model
-Base = declarative_base()
+# Ensure you have the NLTK stopwords downloaded
+nltk.download('stopwords')
 
-class Sheet(Base):
-    __tablename__ = 'sheets'
-    id = Column(Integer, primary_key=True)
-    file_name = Column(String, nullable=False)
-    sheet_name = Column(String, nullable=False)
-    snippets = relationship("Snippet", back_populates="sheet")
+# Initialize SQLAlchemy database setup
+DATABASE_URL = 'sqlite:///search_app.db'
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
 
-class Snippet(Base):
-    __tablename__ = 'snippets'
-    id = Column(Integer, primary_key=True)
-    content = Column(String, nullable=False)
-    sheet_id = Column(Integer, ForeignKey('sheets.id'))
-    sheet = relationship("Sheet", back_populates="snippets")
+def create_fts_table():
+    """Create a virtual FTS table for snippets."""
+    with engine.connect() as connection:
+        connection.execute("DROP TABLE IF EXISTS snippets;")  # Clean up existing table
+        connection.execute("CREATE VIRTUAL TABLE snippets USING fts5(content);")  # Create FTS table
 
-# Set up the SQLite database and SQLAlchemy ORM
-db_engine = create_engine('sqlite:///search_app.db')
-Base.metadata.create_all(db_engine)
-Session = sessionmaker(bind=db_engine)
-session = Session()
+create_fts_table()
 
-def read_excel_to_orm(file, sheet_name=None):
-    """Read an Excel file and save its content in the ORM."""
+def read_excel(file):
+    """Read an Excel file and return its contents as a DataFrame."""
     try:
-        df = pd.read_excel(file, sheet_name=sheet_name)
-        df.dropna(how='all', inplace=True)  # Remove empty rows
-        df.dropna(axis=1, how='all', inplace=True)  # Remove empty columns
-
-        if df.empty:
-            st.warning(f"{sheet_name or file.name} is empty.")
-            return
-
-        # Combine all text into one column
-        df['combined_text'] = df.astype(str).agg(' '.join, axis=1)
-
-        # Create ORM objects
-        sheet = Sheet(file_name=file.name, sheet_name=sheet_name)
-        session.add(sheet)
-        session.commit()
-
-        # Insert combined text snippets into the ORM
-        for text_row in df['combined_text']:
-            snippet = Snippet(content=text_row, sheet=sheet)
-            session.add(snippet)
-
-        session.commit()
-
+        df = pd.read_excel(file, sheet_name=None)  # Read all sheets
+        return df
     except Exception as e:
         st.error(f"Error reading {file.name}: {e}")
+        return {}
 
-def load_files_to_db(uploaded_files):
-    """Load all uploaded Excel files into the ORM."""
+def preprocess_text(text):
+    """Preprocess the text data."""
+    text = re.sub(r'\W+', ' ', text)  # Remove non-word characters
+    text = text.lower()  # Convert to lowercase
+    return text
+
+def process_files(uploaded_files):
+    """Read multiple Excel files and combine their text data."""
+    combined_texts = []
+    
     for file in uploaded_files:
-        try:
-            excel_file = pd.ExcelFile(file)
-            sheet_names = excel_file.sheet_names
-            st.write(f"Processing file: {file.name} with sheets: {sheet_names}")
+        sheets = read_excel(file)
+        for sheet_name, df in sheets.items():
+            if not df.empty:
+                # Remove empty rows and columns
+                df.dropna(how='all', inplace=True)
+                df.dropna(axis=1, how='all', inplace=True)
 
-            for sheet in sheet_names:
-                read_excel_to_orm(file, sheet_name=sheet)
+                combined_text = ' '.join(df.astype(str).values.flatten())
+                combined_texts.append(preprocess_text(combined_text))
 
-        except Exception as e:
-            st.error(f"Error loading {file.name}: {e}")
+                # Insert processed text into the FTS table
+                insert_snippet(combined_text)
+            else:
+                st.warning(f"{file.name} - Sheet {sheet_name} is empty or could not be read.")
+    
+    return combined_texts
 
-def search_keyword_advanced(keyword, proximity=None):
-    """Search for a keyword using advanced FTS features like proximity search."""
-    results = []
-    try:
-        query_str = f"SELECT content FROM snippets WHERE content MATCH :keyword"
-        if proximity:
-            keyword = f'"{keyword}" NEAR/{proximity}'
+def insert_snippet(content):
+    """Insert a snippet into the FTS table."""
+    session = Session()
+    session.execute("INSERT INTO snippets (content) VALUES (:content)", {'content': content})
+    session.commit()
 
-        query = text(query_str)
-        snippets = session.execute(query, {'keyword': keyword}).fetchall()
-
-        results = [snippet[0] for snippet in snippets]
-    except Exception as e:
-        st.error(f"Error searching in the database: {e}")
-
+def search_in_db(keyword):
+    """Search for a keyword in the FTS table and return results."""
+    query = "SELECT content FROM snippets WHERE content MATCH :keyword"
+    results = session.execute(text(query), {'keyword': keyword}).fetchall()
     return results
 
-def highlight_keyword(text, keyword):
-    """Highlight occurrences of the keyword in the text."""
-    highlighted = re.sub(f"({re.escape(keyword)})", r"<span style='color: red;'>\1</span>", text, flags=re.IGNORECASE)
-    return highlighted
-
-def download_results(results, file_name='search_results.csv'):
-    """Provide a download link for search results as a CSV file."""
-    df = pd.DataFrame(results, columns=["Snippet"])
-    return df.to_csv(index=False).encode('utf-8')
-
 # Streamlit app
-st.title("Excel Keyword Search with SQL Full-Text Search and Advanced Queries")
+st.title("Excel Keyword Search App")
+st.write("Upload Excel files and enter keywords or phrases to search.")
 
 uploaded_files = st.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    load_files_to_db(uploaded_files)
-
     keyword = st.text_input("Enter keyword or phrase to search:", placeholder="e.g., 'data analysis'")
-    proximity = st.slider("Proximity search (words apart)", min_value=1, max_value=10, value=5, step=1)
 
     if st.button("Search"):
-        if keyword:
-            st.write(f"Searching for '{keyword}' in the database with proximity {proximity}...")
-            with st.spinner("Searching..."):
-                results = search_keyword_advanced(keyword, proximity=proximity)
-                if results:
-                    for snippet in results:
-                        highlighted_snippet = highlight_keyword(snippet, keyword)
-                        st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0;'>"
-                                    f"<strong>Snippet:</strong> {highlighted_snippet}</div>", unsafe_allow_html=True)
+        with st.spinner('Processing files...'):
+            combined_texts = process_files(uploaded_files)
+            if not combined_texts:  # Check if there are any processed texts
+                st.error("No valid text found in the uploaded files.")
+            else:
+                results = search_in_db(keyword)
 
-                    # Provide a download option for results
-                    st.download_button("Download Results", download_results(results), "search_results.csv", "text/csv")
+                # Display results
+                st.write("Search Results:")
+                if results:
+                    for result in results:
+                        st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
+                                     f"<strong>Snippet:</strong> {result[0]}</div>", unsafe_allow_html=True)
                 else:
                     st.write("No results found.")
-        else:
-            st.warning("Please enter a keyword to search.")
+
+# Close the session
+session.close()
