@@ -1,168 +1,130 @@
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
+import sqlite3
 import re
-from nltk.corpus import stopwords
-from nltk.stem import PorterStemmer
-import nltk
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Table
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.sql import text
 
-# Ensure you have the NLTK stopwords downloaded
-nltk.download('stopwords', quiet=True)
+# Set up the SQLAlchemy ORM model
+Base = declarative_base()
 
-# Initialize stemmer and stop words
-stemmer = PorterStemmer()
-stop_words = set(stopwords.words('english'))
+class Sheet(Base):
+    __tablename__ = 'sheets'
+    id = Column(Integer, primary_key=True)
+    file_name = Column(String, nullable=False)
+    sheet_name = Column(String, nullable=False)
+    snippets = relationship("Snippet", back_populates="sheet")
 
-def read_excel(file, sheet_name=None):
-    """Read an Excel file and return its contents as a DataFrame."""
+class Snippet(Base):
+    __tablename__ = 'snippets'
+    id = Column(Integer, primary_key=True)
+    content = Column(String, nullable=False)
+    sheet_id = Column(Integer, ForeignKey('sheets.id'))
+    sheet = relationship("Sheet", back_populates="snippets")
+
+# Set up the SQLite database and SQLAlchemy ORM
+db_engine = create_engine('sqlite:///search_app.db')
+Base.metadata.create_all(db_engine)
+Session = sessionmaker(bind=db_engine)
+session = Session()
+
+def read_excel_to_orm(file, sheet_name=None):
+    """Read an Excel file and save its content in the ORM."""
     try:
         df = pd.read_excel(file, sheet_name=sheet_name)
-        return df
+        df.dropna(how='all', inplace=True)  # Remove empty rows
+        df.dropna(axis=1, how='all', inplace=True)  # Remove empty columns
+
+        if df.empty:
+            st.warning(f"{sheet_name or file.name} is empty.")
+            return
+
+        # Combine all text into one column
+        df['combined_text'] = df.astype(str).agg(' '.join, axis=1)
+
+        # Create ORM objects
+        sheet = Sheet(file_name=file.name, sheet_name=sheet_name)
+        session.add(sheet)
+        session.commit()
+
+        # Insert combined text snippets into the ORM
+        for text_row in df['combined_text']:
+            snippet = Snippet(content=text_row, sheet=sheet)
+            session.add(snippet)
+
+        session.commit()
+
     except Exception as e:
         st.error(f"Error reading {file.name}: {e}")
-        return pd.DataFrame()
 
-def preprocess_text(text):
-    """Preprocess the text data."""
-    text = re.sub(r'\W+', ' ', text)  # Remove non-word characters
-    text = text.lower()  # Convert to lowercase
-    text = ' '.join(stemmer.stem(word) for word in text.split() if word not in stop_words)  # Remove stop words and stem
-    return text
-
-def process_files(uploaded_files):
-    """Read multiple Excel files and combine their text data from all sheets, disregarding empty sheets."""
-    combined_texts = []
-    raw_texts = []
-    filenames = []
-    file_processed = set()  # Track processed files to avoid duplicates
-
+def load_files_to_db(uploaded_files):
+    """Load all uploaded Excel files into the ORM."""
     for file in uploaded_files:
-        if file.name in file_processed:
-            continue  # Skip files that have already been processed
+        try:
+            excel_file = pd.ExcelFile(file)
+            sheet_names = excel_file.sheet_names
+            st.write(f"Processing file: {file.name} with sheets: {sheet_names}")
 
-        # Get the sheet names from the Excel file
-        all_sheets = pd.ExcelFile(file).sheet_names
-        st.write(f"Processing file: {file.name} with sheets: {all_sheets}")  # Debug message
-        
-        for sheet in all_sheets:
-            df = read_excel(file, sheet_name=sheet)
-            # Drop empty rows and columns
-            df.dropna(how='all', inplace=True)  # Drop rows where all elements are NaN
-            df.dropna(axis=1, how='all', inplace=True)  # Drop columns where all elements are NaN
+            for sheet in sheet_names:
+                read_excel_to_orm(file, sheet_name=sheet)
 
-            if df.empty:
-                st.warning(f"{sheet} is empty after removing empty rows and columns in file '{file.name}'.")
-                continue  # Skip empty sheets
+        except Exception as e:
+            st.error(f"Error loading {file.name}: {e}")
 
-            # Filter out NaN values and convert to strings
-            df = df.fillna('')  # Replace NaN with empty strings
-            combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
-            processed_text = preprocess_text(combined_text)
+def search_keyword_advanced(keyword, proximity=None):
+    """Search for a keyword using advanced FTS features like proximity search."""
+    results = []
+    try:
+        query_str = f"SELECT content FROM snippets WHERE content MATCH :keyword"
+        if proximity:
+            keyword = f'"{keyword}" NEAR/{proximity}'
 
-            if processed_text in combined_texts:
-                continue  # Skip duplicate processed texts
-            
-            combined_texts.append(processed_text)
-            raw_texts.append(combined_text)  # Keep raw text for display
-            filenames.append(file.name)  # Store the filename for reference
-            file_processed.add(file.name)  # Mark file as processed
+        query = text(query_str)
+        snippets = session.execute(query, {'keyword': keyword}).fetchall()
 
-    return combined_texts, raw_texts, filenames
+        results = [snippet[0] for snippet in snippets]
+    except Exception as e:
+        st.error(f"Error searching in the database: {e}")
 
-def create_tfidf_matrix(texts):
-    """Create a TF-IDF matrix from the combined text data with n-grams."""
-    vectorizer = TfidfVectorizer(ngram_range=(1, 2))  # Allow unigrams and bigrams
-    tfidf_matrix = vectorizer.fit_transform(texts)
-    return tfidf_matrix, vectorizer
+    return results
 
-def search_keyword(keyword, tfidf_matrix, vectorizer):
-    """Search for a keyword or phrase in the TF-IDF matrix and return relevant indices."""
-    query_vec = vectorizer.transform([keyword])
-    results = (tfidf_matrix * query_vec.T).toarray()
-    return results.flatten()
+def highlight_keyword(text, keyword):
+    """Highlight occurrences of the keyword in the text."""
+    highlighted = re.sub(f"({re.escape(keyword)})", r"<span style='color: red;'>\1</span>", text, flags=re.IGNORECASE)
+    return highlighted
 
-def extract_relevant_snippets(raw_texts, filenames, keyword):
-    """Extract all occurrences of the keyword or phrase from the raw texts."""
-    snippets_dict = {}
-
-    for text, filename in zip(raw_texts, filenames):
-        occurrences = [m.start() for m in re.finditer(re.escape(keyword.lower()), text.lower())]
-        if occurrences:  # Only proceed if the keyword is found
-            snippets_dict[filename] = snippets_dict.get(filename, set())  # Use set to avoid duplicates
-            for start in occurrences:
-                start_index = max(start - 30, 0)
-                end_index = min(start + len(keyword) + 30, len(text))
-                snippet = text[start_index:end_index]
-                highlighted_snippet = snippet.replace(keyword, f"<span style='color: red; font-weight: bold;'>{keyword}</span>")
-                snippets_dict[filename].add(highlighted_snippet)  # Add each occurrence
-
-    # Convert sets back to lists for rendering
-    for filename in snippets_dict:
-        snippets_dict[filename] = list(snippets_dict[filename])
-    
-    return snippets_dict
+def download_results(results, file_name='search_results.csv'):
+    """Provide a download link for search results as a CSV file."""
+    df = pd.DataFrame(results, columns=["Snippet"])
+    return df.to_csv(index=False).encode('utf-8')
 
 # Streamlit app
-st.title("Excel Keyword Search App")
-st.write("Upload multiple Excel files and enter keywords or phrases to search.")
+st.title("Excel Keyword Search with SQL Full-Text Search and Advanced Queries")
 
 uploaded_files = st.file_uploader("Upload Excel files", type=["xlsx"], accept_multiple_files=True)
 
-# Initialize session state variables
-if 'tfidf_matrix' not in st.session_state:
-    st.session_state.tfidf_matrix = None
-    st.session_state.vectorizer = None
-    st.session_state.combined_texts = []
-    st.session_state.raw_texts = []
-    st.session_state.filenames = []
-
 if uploaded_files:
-    # Process new files
-    combined_texts, raw_texts, filenames = process_files(uploaded_files)
-
-    # Update session state with newly processed data
-    st.session_state.combined_texts.extend(combined_texts)
-    st.session_state.raw_texts.extend(raw_texts)
-    st.session_state.filenames.extend(filenames)
-
-    if st.session_state.combined_texts:
-        # Create TF-IDF matrix and vectorizer only if there are texts
-        if st.session_state.tfidf_matrix is None:  # Calculate only if not already done
-            st.session_state.tfidf_matrix, st.session_state.vectorizer = create_tfidf_matrix(st.session_state.combined_texts)
+    load_files_to_db(uploaded_files)
 
     keyword = st.text_input("Enter keyword or phrase to search:", placeholder="e.g., 'data analysis'")
+    proximity = st.slider("Proximity search (words apart)", min_value=1, max_value=10, value=5, step=1)
 
     if st.button("Search"):
-        if st.session_state.tfidf_matrix is not None:
-            with st.spinner('Searching...'):
-                results = search_keyword(keyword, st.session_state.tfidf_matrix, st.session_state.vectorizer)
-
-                # Display results
-                st.write("Search Results:")
-                filtered_results = []
-
-                # Loop through the results to create filtered results based on scores
-                for idx, score in enumerate(results):
-                    if score > 0:  # If the score is greater than zero, add to filtered results
-                        filtered_results.append((st.session_state.filenames[idx], score))
-
-                # Ensure there are valid results before extracting snippets
-                if filtered_results:
-                    snippets_dict = extract_relevant_snippets(st.session_state.raw_texts, st.session_state.filenames, keyword)
-
-                    # Display snippets for each file with results
-                    for filename, score in filtered_results:
-                        if filename in snippets_dict:
-                            snippets = snippets_dict[filename]
-                            snippet_html = "<br>".join(snippets)  # Join snippets with line breaks
-                            st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
-                                         f"<strong>File:</strong> {filename} | <strong>Relevance Score:</strong> {score:.4f}<br>"
-                                         f"<strong>Snippets:</strong><br>{snippet_html}</div>", unsafe_allow_html=True)
+        if keyword:
+            st.write(f"Searching for '{keyword}' in the database with proximity {proximity}...")
+            with st.spinner("Searching..."):
+                results = search_keyword_advanced(keyword, proximity=proximity)
+                if results:
+                    for snippet in results:
+                        highlighted_snippet = highlight_keyword(snippet, keyword)
+                        st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0;'>"
+                                    f"<strong>Snippet:</strong> {highlighted_snippet}</div>", unsafe_allow_html=True)
 
                     # Provide a download option for results
-                    result_df = pd.DataFrame(filtered_results, columns=["File", "Relevance Score"])
-                    st.download_button("Download Results", result_df.to_csv(index=False).encode('utf-8'), "search_results.csv", "text/csv")
+                    st.download_button("Download Results", download_results(results), "search_results.csv", "text/csv")
                 else:
                     st.write("No results found.")
         else:
-            st.warning("No text data to search. Please upload files.")
+            st.warning("Please enter a keyword to search.")
