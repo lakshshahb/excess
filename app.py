@@ -16,8 +16,8 @@ Session = sessionmaker(bind=engine)
 def create_fts_table():
     """Create a virtual FTS table for snippets."""
     with engine.connect() as connection:
-        connection.execute("DROP TABLE IF EXISTS snippets;")  # Clean up existing table
-        connection.execute("CREATE VIRTUAL TABLE snippets USING fts5(content);")  # Create FTS table
+        connection.execute(text("DROP TABLE IF EXISTS snippets;"))  # Clean up existing table
+        connection.execute(text("CREATE VIRTUAL TABLE snippets USING fts5(content);"))  # Create FTS table
 
 create_fts_table()
 
@@ -61,7 +61,7 @@ def process_files(uploaded_files):
 def insert_snippet(content):
     """Insert a snippet into the FTS table."""
     session = Session()
-    session.execute("INSERT INTO snippets (content) VALUES (:content)", {'content': content})
+    session.execute(text("INSERT INTO snippets (content) VALUES (:content)"), {'content': content})
     session.commit()
 
 def search_in_db(keyword):
