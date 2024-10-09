@@ -60,14 +60,17 @@ def process_files(uploaded_files):
 
 def insert_snippet(content):
     """Insert a snippet into the FTS table."""
-    session = Session()
+    session = Session()  # Create a session for database operations
     session.execute(text("INSERT INTO snippets (content) VALUES (:content)"), {'content': content})
     session.commit()
+    session.close()  # Close the session after the operation
 
 def search_in_db(keyword):
     """Search for a keyword in the FTS table and return results."""
+    session = Session()  # Create a new session for the search operation
     query = "SELECT content FROM snippets WHERE content MATCH :keyword"
     results = session.execute(text(query), {'keyword': keyword}).fetchall()
+    session.close()  # Close the session after fetching results
     return results
 
 # Streamlit app
@@ -95,6 +98,3 @@ if uploaded_files:
                                      f"<strong>Snippet:</strong> {result[0]}</div>", unsafe_allow_html=True)
                 else:
                     st.write("No results found.")
-
-# Close the session
-session.close()
