@@ -54,6 +54,8 @@ def process_files(uploaded_files):
                 # Insert processed text into the FTS table if not already present
                 if not check_snippet_exists(combined_text):
                     insert_snippet(combined_text)
+                else:
+                    st.write(f"Snippet already exists for: {combined_text[:30]}...")  # Debug: Print snippets that exist
             else:
                 st.warning(f"{file.name} - Sheet {sheet_name} is empty or could not be read.")
     
@@ -97,9 +99,9 @@ if uploaded_files:
                 st.error("No valid text found in the uploaded files.")
             else:
                 results = search_in_db(keyword)
+                st.write(f"Results for keyword: '{keyword}'")  # Debug: Show keyword searched
 
                 # Display results
-                st.write("Search Results:")
                 if results:
                     unique_results = set(result[0] for result in results)  # Use a set to remove duplicates
                     for result in unique_results:
