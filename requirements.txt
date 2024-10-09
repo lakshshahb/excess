@@ -1,4 +1,4 @@
-pandas
 streamlit
-sqlite3
+pandas
+SQLAlchemy
 openpyxl
