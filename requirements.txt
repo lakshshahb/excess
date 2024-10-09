@@ -1,5 +1,4 @@
 pandas
 streamlit
 sqlite3
-sqlalchemy
 openpyxl
