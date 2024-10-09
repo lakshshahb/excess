@@ -51,8 +51,9 @@ def process_files(uploaded_files):
                 combined_text = ' '.join(df.astype(str).values.flatten())
                 combined_texts.append(preprocess_text(combined_text))
 
-                # Insert processed text into the FTS table
-                insert_snippet(combined_text)
+                # Insert processed text into the FTS table if not already present
+                if not check_snippet_exists(combined_text):
+                    insert_snippet(combined_text)
             else:
                 st.warning(f"{file.name} - Sheet {sheet_name} is empty or could not be read.")
     
@@ -64,6 +65,13 @@ def insert_snippet(content):
     session.execute(text("INSERT INTO snippets (content) VALUES (:content)"), {'content': content})
     session.commit()
     session.close()  # Close the session after the operation
+
+def check_snippet_exists(content):
+    """Check if a snippet already exists in the FTS table."""
+    session = Session()
+    exists = session.execute(text("SELECT COUNT(*) FROM snippets WHERE content = :content"), {'content': content}).scalar() > 0
+    session.close()
+    return exists
 
 def search_in_db(keyword):
     """Search for a keyword in the FTS table and return results."""
@@ -93,8 +101,9 @@ if uploaded_files:
                 # Display results
                 st.write("Search Results:")
                 if results:
-                    for result in results:
+                    unique_results = set(result[0] for result in results)  # Use a set to remove duplicates
+                    for result in unique_results:
                         st.markdown(f"<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>"
-                                     f"<strong>Snippet:</strong> {result[0]}</div>", unsafe_allow_html=True)
+                                     f"<strong>Snippet:</strong> {result}</div>", unsafe_allow_html=True)
                 else:
                     st.write("No results found.")
