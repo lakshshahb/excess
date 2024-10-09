@@ -34,8 +34,12 @@ def process_files(uploaded_files):
     combined_texts = []
     raw_texts = []
     filenames = []
+    file_processed = set()  # Track processed files to avoid duplicates
 
     for file in uploaded_files:
+        if file.name in file_processed:
+            continue  # Skip files that have already been processed
+
         # Get the sheet names from the Excel file
         all_sheets = pd.ExcelFile(file).sheet_names
         st.write(f"Processing file: {file.name} with sheets: {all_sheets}")  # Debug message
@@ -53,9 +57,15 @@ def process_files(uploaded_files):
             # Filter out NaN values and convert to strings
             df = df.fillna('')  # Replace NaN with empty strings
             combined_text = ' '.join(df.astype(str).values.flatten())  # Flatten the DataFrame into a single string
-            combined_texts.append(preprocess_text(combined_text))
+            processed_text = preprocess_text(combined_text)
+
+            if processed_text in combined_texts:
+                continue  # Skip duplicate processed texts
+            
+            combined_texts.append(processed_text)
             raw_texts.append(combined_text)  # Keep raw text for display
             filenames.append(file.name)  # Store the filename for reference
+            file_processed.add(file.name)  # Mark file as processed
 
     return combined_texts, raw_texts, filenames
 
