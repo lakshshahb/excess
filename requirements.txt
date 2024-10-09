@@ -1,5 +1,4 @@
 pandas
 streamlit
-scikit-learn
-nltk
+sqlite-3
 openpyxl
